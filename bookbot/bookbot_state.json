@@ -1,0 +1,30 @@
+{
+  "sessions": {
+    "user_1:too_good_to_be_true": {
+      "user_id": "user_1",
+      "book_id": "too_good_to_be_true",
+      "current_page": 39,
+      "last_updated": "2026-06-01 11:03:34.169625"
+    }
+  },
+  "user_stats": {
+    "user_1": {
+      "xp": 830,
+      "streak": 1,
+      "badges": [
+        "First Chapter",
+        "Speed Reader"
+      ],
+      "total_pages_read": 83,
+      "level": 1
+    }
+  },
+  "books": {
+    "too_good_to_be_true": {
+      "book_id": "too_good_to_be_true",
+      "title": "too good to be true",
+      "author": "prajakta koli",
+      "total_pages": 211
+    }
+  }
+}
