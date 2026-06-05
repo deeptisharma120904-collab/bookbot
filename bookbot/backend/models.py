@@ -50,12 +50,19 @@ class IngestRequestJSON(BaseModel):
     content: str  # Full book text — pages separated by page markers or newlines
 
 
+class ChatHistoryMessage(BaseModel):
+    """A recent chat message used for conversational continuity."""
+    role: str
+    content: str
+
+
 class ChatRequest(BaseModel):
     """Request body for the chat endpoint."""
     user_id: str
     book_id: str
     current_page: int
     message: str
+    history: List[ChatHistoryMessage] = []
 
 
 class SessionSyncRequest(BaseModel):

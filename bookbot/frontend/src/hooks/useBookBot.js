@@ -8,7 +8,8 @@ import { useState, useCallback } from 'react';
 const API_BASE = '/api';
 
 export function useBookBot() {
-  const [loading, setLoading] = useState(false);
+  const [ingestLoading, setIngestLoading] = useState(false);
+  const [chatLoading, setChatLoading] = useState(false);
   const [error, setError] = useState(null);
   const [books, setBooks] = useState([]);
   const [stats, setStats] = useState({
@@ -21,7 +22,7 @@ export function useBookBot() {
 
   // ─── Ingest a book (JSON text) ──────────────────────────────
   const ingestBook = useCallback(async ({ book_id, title, author, content }) => {
-    setLoading(true);
+    setIngestLoading(true);
     setError(null);
     try {
       const res = await fetch(`${API_BASE}/books/ingest`, {
@@ -38,13 +39,13 @@ export function useBookBot() {
       setError(e.message);
       throw e;
     } finally {
-      setLoading(false);
+      setIngestLoading(false);
     }
   }, []);
 
   // ─── Ingest a book (PDF upload) ─────────────────────────────
   const ingestBookPdf = useCallback(async (formData) => {
-    setLoading(true);
+    setIngestLoading(true);
     setError(null);
     try {
       const res = await fetch(`${API_BASE}/books/ingest/pdf`, {
@@ -60,19 +61,19 @@ export function useBookBot() {
       setError(e.message);
       throw e;
     } finally {
-      setLoading(false);
+      setIngestLoading(false);
     }
   }, []);
 
   // ─── Send a chat message ────────────────────────────────────
-  const sendMessage = useCallback(async ({ user_id, book_id, current_page, message }) => {
-    setLoading(true);
+  const sendMessage = useCallback(async ({ user_id, book_id, current_page, message, history = [] }) => {
+    setChatLoading(true);
     setError(null);
     try {
       const res = await fetch(`${API_BASE}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id, book_id, current_page, message }),
+        body: JSON.stringify({ user_id, book_id, current_page, message, history }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -84,7 +85,7 @@ export function useBookBot() {
       setError(e.message);
       throw e;
     } finally {
-      setLoading(false);
+      setChatLoading(false);
     }
   }, []);
 
@@ -171,7 +172,9 @@ export function useBookBot() {
   const clearError = useCallback(() => setError(null), []);
 
   return {
-    loading,
+    loading: ingestLoading || chatLoading,
+    ingestLoading,
+    chatLoading,
     error,
     books,
     stats,

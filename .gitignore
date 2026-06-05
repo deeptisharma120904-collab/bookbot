@@ -1,0 +1,11 @@
+.env
+bookbot/.env
+gcp-key.json
+__pycache__/
+*.pyc
+node_modules/
+chroma_data/
+bookbot/chroma_data/
+bookbot/bookbot_state.json
+dist/
+build/

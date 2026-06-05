@@ -16,7 +16,8 @@ import './index.css';
 
 function App() {
   const {
-    loading,
+    ingestLoading,
+    chatLoading,
     error,
     books,
     stats,
@@ -89,13 +90,14 @@ function App() {
     }
   }, [stats.level, stats.badges.length]);
 
-  const handleSendMessage = useCallback(async (message) => {
+  const handleSendMessage = useCallback(async ({ message, history }) => {
     if (!selectedBook) throw new Error('No book selected');
     return await sendMessage({
       user_id: userId,
       book_id: selectedBook.book_id,
       current_page: currentPage,
       message,
+      history,
     });
   }, [selectedBook, userId, currentPage, sendMessage]);
 
@@ -186,7 +188,7 @@ function App() {
                     <BookIngest
                       onIngestText={(data) => handleIngestSuccess(ingestBook, data)}
                       onIngestPdf={(data) => handleIngestSuccess(ingestBookPdf, data)}
-                      loading={loading}
+                      loading={ingestLoading}
                     />
                   </div>
                 )}
@@ -241,7 +243,7 @@ function App() {
                     currentPage={currentPage}
                     totalPages={selectedBook.total_pages}
                     onPageChange={handlePageChange}
-                    disabled={loading}
+                    disabled={false}
                   />
 
                   {/* Reading Now Card */}
@@ -320,7 +322,7 @@ function App() {
               book={selectedBook}
               currentPage={currentPage}
               getPage={getPage}
-              loading={loading}
+              loading={false}
               onPageChange={handlePageChange}
             />
           </div>
@@ -352,7 +354,7 @@ function App() {
             <div className="flex-1 relative overflow-hidden min-h-0">
               <ChatWidget
                 onSendMessage={handleSendMessage}
-                loading={loading}
+                loading={chatLoading}
                 bookSelected={!!selectedBook}
                 bookId={selectedBook?.book_id}
                 currentPage={currentPage}

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 
 function BookReader({ book, currentPage, getPage, loading: externalLoading, onPageChange }) {
-  const [content, setContent] = useState('');
+  const [pageData, setPageData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -13,15 +13,15 @@ function BookReader({ book, currentPage, getPage, loading: externalLoading, onPa
       setError(null);
       try {
         const data = await getPage(book.book_id, currentPage);
-        if (data && data.content) {
-          setContent(data.content);
+        if (data) {
+          setPageData(data);
         } else {
           setError('Page content not found.');
-          setContent('');
+          setPageData(null);
         }
       } catch (err) {
         setError('Failed to load page content.');
-        setContent('');
+        setPageData(null);
       } finally {
         setLoading(false);
       }
@@ -111,32 +111,59 @@ function BookReader({ book, currentPage, getPage, loading: externalLoading, onPa
             <div className="absolute inset-0 opacity-[0.4] mix-blend-multiply pointer-events-none" style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=%220 0 200 200%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22noiseFilter%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.65%22 numOctaves=%223%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23noiseFilter)%22/%3E%3C/svg%3E")' }} />
 
             <div className="relative z-10 px-12 md:px-16 py-20 pb-28 flex flex-col min-h-full">
-              {/* Content text */}
-              <div className="flex-1 font-serif text-[#2c2826] text-[1.15rem] leading-[1.9] text-justify">
-                {content
-                  // Fix PDF hard wrapping:
-                  // 1. Standardize newlines
-                  .replace(/\r\n/g, '\n')
-                  // 2. Identify true paragraphs (separated by blank lines) and replace with placeholder
-                  .replace(/\n\s*\n/g, '___PARAGRAPH___')
-                  // 3. For any remaining single newlines (hard wrapping), replace with a space
-                  .replace(/\n/g, ' ')
-                  // 4. Split back into actual paragraphs
-                  .split('___PARAGRAPH___')
-                  .map((paragraph, index) => {
-                    const pText = paragraph.trim();
-                    if (!pText) return null;
-                    return (
-                      <p 
-                        key={index} 
-                        className={`mb-5 animate-fade-in ${index > 0 ? 'indent-10' : 'first-letter:text-5xl first-letter:font-bold first-letter:mr-1 first-letter:float-left first-letter:text-[#1a1816]'}`} 
-                        style={{ animationDelay: `${index * 0.03}s` }}
-                      >
-                        {pText}
-                      </p>
-                    );
-                  })}
-              </div>
+              {pageData?.page_type === 'cover' ? (
+                <div className="flex-1 flex items-center justify-center">
+                  <div className="w-full max-w-xl mx-auto rounded-[2rem] border border-[#7ab4e4] bg-gradient-to-b from-[#a8d8ff] via-[#7dc0f2] to-[#5f9ed9] px-10 py-14 text-center shadow-[inset_0_0_0_3px_rgba(255,255,255,0.22)]">
+                    <div className="mb-8 text-xs uppercase tracking-[0.5em] text-white/80">
+                      Book Cover
+                    </div>
+                    <h3 className="font-serif text-5xl md:text-6xl leading-none text-white drop-shadow-sm">
+                      {pageData.title}
+                    </h3>
+                    <p className="mt-10 text-lg md:text-xl font-semibold uppercase tracking-[0.35em] text-[#234f7e]">
+                      {pageData.author}
+                    </p>
+                    <p className="mt-8 text-sm leading-7 text-[#16324d]/80">
+                      {pageData.message}
+                    </p>
+                  </div>
+                </div>
+              ) : pageData?.page_type === 'image_only' ? (
+                <div className="flex-1 flex items-center justify-center">
+                  <div className="max-w-lg rounded-3xl border border-amber-900/20 bg-[#f0e2bd] px-8 py-10 text-center text-[#4b3d2d] shadow-xl">
+                    <div className="text-4xl mb-4">Illustration</div>
+                    <h3 className="font-serif text-3xl">{pageData.title}</h3>
+                    <p className="mt-3 text-sm leading-7">{pageData.message}</p>
+                  </div>
+                </div>
+              ) : (
+                /* Content text */
+                <div className="flex-1 font-serif text-[#2c2826] text-[1.15rem] leading-[1.9] text-justify">
+                  {(pageData?.content || '')
+                    // Fix PDF hard wrapping:
+                    // 1. Standardize newlines
+                    .replace(/\r\n/g, '\n')
+                    // 2. Identify true paragraphs (separated by blank lines) and replace with placeholder
+                    .replace(/\n\s*\n/g, '___PARAGRAPH___')
+                    // 3. For any remaining single newlines (hard wrapping), replace with a space
+                    .replace(/\n/g, ' ')
+                    // 4. Split back into actual paragraphs
+                    .split('___PARAGRAPH___')
+                    .map((paragraph, index) => {
+                      const pText = paragraph.trim();
+                      if (!pText) return null;
+                      return (
+                        <p 
+                          key={index} 
+                          className={`mb-5 animate-fade-in ${index > 0 ? 'indent-10' : 'first-letter:text-5xl first-letter:font-bold first-letter:mr-1 first-letter:float-left first-letter:text-[#1a1816]'}`} 
+                          style={{ animationDelay: `${index * 0.03}s` }}
+                        >
+                          {pText}
+                        </p>
+                      );
+                    })}
+                </div>
+              )}
 
               {/* Page Number on physical page */}
               <div className="absolute bottom-10 left-0 right-0 text-center font-serif text-[#8b7355] text-sm tracking-widest">

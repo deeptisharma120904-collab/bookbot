@@ -38,6 +38,14 @@ export default function ChatWidget({ onSendMessage, loading, bookSelected, bookI
     const trimmed = forcedMessage || input.trim();
     if (!trimmed || loading) return;
 
+    const history = messages
+      .filter((msg) => !msg.isError)
+      .slice(-6)
+      .map((msg) => ({
+        role: msg.role === 'bot' ? 'assistant' : 'user',
+        content: msg.content,
+      }));
+
     const userMsg = {
       id: `user-${Date.now()}`,
       role: 'user',
@@ -49,7 +57,7 @@ export default function ChatWidget({ onSendMessage, loading, bookSelected, bookI
     setSuggestions([]);
 
     try {
-      const response = await onSendMessage(trimmed);
+      const response = await onSendMessage({ message: trimmed, history });
       const botMsg = {
         id: `bot-${Date.now()}`,
         role: 'bot',

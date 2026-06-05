@@ -3,19 +3,19 @@
     "user_1:too_good_to_be_true": {
       "user_id": "user_1",
       "book_id": "too_good_to_be_true",
-      "current_page": 39,
-      "last_updated": "2026-06-01 11:03:34.169625"
+      "current_page": 9,
+      "last_updated": "2026-06-05 10:00:12.226341"
     }
   },
   "user_stats": {
     "user_1": {
-      "xp": 830,
-      "streak": 1,
+      "xp": 920,
+      "streak": 2,
       "badges": [
         "First Chapter",
         "Speed Reader"
       ],
-      "total_pages_read": 83,
+      "total_pages_read": 92,
       "level": 1
     }
   },
