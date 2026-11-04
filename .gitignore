@@ -3,9 +3,14 @@ bookbot/.env
 gcp-key.json
 __pycache__/
 *.pyc
+*.pyo
 node_modules/
 chroma_data/
 bookbot/chroma_data/
 bookbot/bookbot_state.json
 dist/
 build/
+venv/
+bookbot/venv/
+.venv/
+bookbot/evals/results/
