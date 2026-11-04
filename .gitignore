@@ -13,4 +13,7 @@ build/
 venv/
 bookbot/venv/
 .venv/
-bookbot/evals/results/
+bookbot/evals/results/*
+!bookbot/evals/results/*.json
+!bookbot/evals/results/*.md
+!bookbot/evals/results/.gitkeep
