@@ -1,0 +1,41 @@
+{
+  "benchmark": "evals/followups.json (4 multi-turn questions against Too Good to Be True)",
+  "retrieval_mode": "rewrite",
+  "judge_model": "allam-2-7b",
+  "models": {
+    "openai/gpt-oss-120b": {
+      "model_type": "Dense 120B Open Architecture",
+      "hit@1": "1/4 (25%)",
+      "hit@3": "2/4 (50%)",
+      "hit@5": "3/4 (75%)",
+      "mrr": 0.4375,
+      "correctness": "4/4 (100%)",
+      "faithfulness": "2/4 (50%)",
+      "latency_p50_s": 2.378,
+      "latency_p95_s": 23.054,
+      "avg_cost_usd": 0.001876,
+      "strengths": "Direct, engaging persona adherence, 100% answer correctness on grounded questions, clean markdown citations.",
+      "weaknesses": "Higher parameter footprint; occasional unfaithful flag when citing verbatim Hindi dialog from the page."
+    },
+    "qwen/qwen3.8-27b": {
+      "model_type": "27B Open Weights Instruction-tuned",
+      "hit@1": "1/4 (25%)",
+      "hit@3": "2/4 (50%)",
+      "hit@5": "3/4 (75%)",
+      "mrr": 0.4375,
+      "correctness": "3/4 (75%)",
+      "faithfulness": "3/4 (75%)",
+      "latency_p50_s": 2.242,
+      "latency_p95_s": 24.446,
+      "avg_cost_usd": 0.001917,
+      "strengths": "Faster median latency (2.24s), strictly refuses when retrieval misses the source page (faithful).",
+      "weaknesses": "Daily 200k token quota on Groq free tier; tends to emit long internal reasoning monologues into conversational chat."
+    }
+  },
+  "recommendation": {
+    "primary_generation_model": "openai/gpt-oss-120b",
+    "rationale": "Superior conversational tone for the Enthusiastic Librarian persona, higher answer correctness (100% vs 75%), and does not hit the 200k daily TPD quota limit on Groq.",
+    "judge_model": "allam-2-7b",
+    "judge_rationale": "Compact 7B model, zero rate limit contention with generation model, fast and reliable for JSON verdict scoring."
+  }
+}

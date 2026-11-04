@@ -389,6 +389,7 @@ async def run_all(
         "book_id": book_id,
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "mode": mode,
+        "model": os.getenv("GROQ_MODEL"),
         "pricing": {
             "input_cost_per_1m": in_cost,
             "output_cost_per_1m": out_cost,
@@ -427,7 +428,15 @@ def main():
         choices=["dense", "hybrid", "rewrite"],
         help="Retrieval mode: dense (baseline cosine), hybrid (BM25+RRF), or rewrite (query rewriting)",
     )
+    parser.add_argument(
+        "--model",
+        default=os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"),
+        help="Groq model to use for generation (e.g. openai/gpt-oss-120b, qwen/qwen3.8-27b, allam-2-7b)",
+    )
     args = parser.parse_args()
+
+    if args.model:
+        os.environ["GROQ_MODEL"] = args.model
 
     asyncio.run(run_all(
         Path(args.questions),

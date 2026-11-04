@@ -33,6 +33,21 @@ Evaluated on multi-turn ambiguous follow-up queries with pronoun referents (e.g.
 | **Latency p95** | 25.74s | 23.05s | -2.69s |
 | **Avg Cost / Query** | $0.002005 | $0.001876 | -$0.000129 |
 
+## Model Comparison: `openai/gpt-oss-120b` vs `qwen/qwen3.8-27b`
+
+Evaluated using `evals/followups.json` with conversational query rewriting:
+
+| Metric | `openai/gpt-oss-120b` (`step_d_rewrite.json`) | `qwen/qwen3.8-27b` (`followups_qwen.json`) | Advantage |
+|---|---|---|---|
+| **Hit@5** | 3/4 (75%) | 3/4 (75%) | Tied |
+| **MRR** | 0.4375 | 0.4375 | Tied |
+| **Correctness** | 4/4 (100%) | 3/4 (75%) | **gpt-oss-120b (+25%)** |
+| **Faithfulness** | 2/4 (50%) | 3/4 (75%) | qwen3.8-27b (+25%) |
+| **Latency p50** | 2.38s | 2.24s | qwen3.8-27b (-0.14s) |
+| **Latency p95** | 23.05s | 24.45s | gpt-oss-120b (-1.40s) |
+| **Cost / Query** | $0.001876 | $0.001917 | gpt-oss-120b (-$0.000041) |
+| **Quota Risk** | Standard RPM/RPD | ⚠️ 200k Daily TPD Limit | **gpt-oss-120b (No daily cap block)** |
+
 ## Run Details
 
 - **Baseline:** Hash-based polynomial rolling embeddings + pure SQLite cosine similarity. File: `evals/results/baseline.json`.
