@@ -39,3 +39,4 @@
     "judge_rationale": "Compact 7B model, zero rate limit contention with generation model, fast and reliable for JSON verdict scoring."
   }
 }
+

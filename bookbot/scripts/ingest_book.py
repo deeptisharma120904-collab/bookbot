@@ -49,12 +49,12 @@ def main():
         print("📄 Reading PDF file...")
         with open(file_path, "rb") as f:
             pdf_bytes = f.read()
-        chunks = chunk_pdf(pdf_bytes)
+        chunks, total_pages = chunk_pdf(pdf_bytes)
     elif ext in [".txt", ".md", ".text"]:
         print("📝 Reading text file...")
         with open(file_path, "r", encoding="utf-8") as f:
             text = f.read()
-        chunks = chunk_text(text)
+        chunks, total_pages = chunk_text(text)
     else:
         print(f"❌ Unsupported file type: {ext}")
         print("   Supported: .pdf, .txt, .md")
@@ -64,7 +64,7 @@ def main():
         print("❌ No content could be extracted from the file.")
         sys.exit(1)
 
-    print(f"✂️  Split into {len(chunks)} pages/chunks")
+    print(f"✂️  Split into {len(chunks)} text pages/chunks (Total document pages: {total_pages})")
     print()
 
     # Generate embeddings and store
@@ -76,12 +76,12 @@ def main():
         book_id=book_id,
         title=args.title,
         author=args.author,
-        total_pages=len(chunks)
+        total_pages=total_pages
     )
 
     print()
     print(f"✅ Successfully ingested '{args.title}'!")
-    print(f"   Pages: {len(chunks)}")
+    print(f"   Total Pages: {total_pages}")
     print(f"   Chunks stored: {num_stored}")
     print(f"   Book ID: {book_id}")
 

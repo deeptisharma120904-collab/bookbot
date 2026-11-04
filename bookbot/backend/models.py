@@ -4,7 +4,7 @@ BookBot — Pydantic data models for API requests, responses, and internal data 
 
 from pydantic import BaseModel, Field
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 # ─── Internal Data Models ─────────────────────────────────────────────
@@ -28,14 +28,14 @@ class UserSession(BaseModel):
     user_id: str
     book_id: str
     current_page: int = 1
-    last_updated: datetime = Field(default_factory=datetime.utcnow)
+    last_updated: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class UserStats(BaseModel):
     """User gamification statistics."""
     xp: int = 0
     streak: int = 0
-    badges: List[str] = []
+    badges: List[str] = Field(default_factory=list)
     total_pages_read: int = 0
     level: int = 1
 
@@ -109,3 +109,14 @@ class IngestResponse(BaseModel):
     title: str
     total_pages: int
     message: str
+
+
+class IngestionStatusResponse(BaseModel):
+    """Status and progress of background book ingestion."""
+    book_id: str
+    status: str  # "pending", "processing", "completed", "failed"
+    processed_pages: int
+    total_pages: int
+    progress_percentage: float
+    error: Optional[str] = None
+
