@@ -3,20 +3,26 @@ BookBot FastAPI application.
 Main entry point with all API endpoints for book ingestion, chat, and session management.
 """
 
+import asyncio
 import re
 from contextlib import asynccontextmanager
+from functools import partial
+from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from starlette.responses import FileResponse
 
-from .embeddings import chunk_pdf, chunk_text, store_chunks
+from .embeddings import chunk_pdf, chunk_text, store_chunks, delete_book_collection, delete_all_collections, get_pdf_page_count
 from .llm import (
     build_catchup_prompt,
     build_character_prompt,
     build_page_explain_prompt,
     build_summary_prompt,
     build_system_prompt,
+    async_chat_with_groq,
     chat_with_groq,
     generate_quote,
     generate_suggestions,
@@ -27,18 +33,24 @@ from .models import (
     ChatResponse,
     IngestRequestJSON,
     IngestResponse,
+    IngestionStatusResponse,
     SessionResponse,
     SessionSyncRequest,
     SuggestionsResponse,
 )
 from .retrieval import get_page_chunk, retrieve_context, retrieve_page_range
 from .session import (
+    clear_all_books_data,
+    delete_book_data,
     get_book_metadata,
+    get_ingestion_status,
     get_session,
     get_user_stats,
     list_books,
     load_state_from_disk,
+    record_chat_interaction,
     save_state_to_disk,
+    set_ingestion_status,
     store_book_metadata,
     update_session,
 )
@@ -54,6 +66,9 @@ async def lifespan(app: FastAPI):
     print("BookBot - Context-Aware Reading Assistant")
     print("=" * 60)
     print("[BookBot] Starting up...")
+    # Initialise the SQLite vector store (creates tables if not present)
+    from .vector_store import init_db
+    init_db()
     load_state_from_disk()
     yield
     print("\n[BookBot] Shutting down...")
@@ -76,9 +91,26 @@ app.add_middleware(
 )
 
 
-@app.get("/")
-async def root():
-    return {"message": "BookBot API is running!", "version": "1.0.0"}
+# ── Serve the built React frontend ─────────────────────────────
+# Path to the Vite build output (frontend/dist)
+_FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+
+if _FRONTEND_DIR.is_dir():
+    # Serve JS/CSS/images from /assets
+    app.mount(
+        "/assets",
+        StaticFiles(directory=_FRONTEND_DIR / "assets"),
+        name="static-assets",
+    )
+
+    @app.get("/")
+    async def serve_spa_root():
+        """Serve the React app for the root URL."""
+        return FileResponse(_FRONTEND_DIR / "index.html")
+else:
+    @app.get("/")
+    async def root():
+        return {"message": "BookBot API is running! (frontend not built — run 'npm run build' in frontend/)", "version": "1.0.0"}
 
 
 @app.post("/api/books/ingest", response_model=IngestResponse)
@@ -88,7 +120,7 @@ async def ingest_book_json(request: IngestRequestJSON):
     Chunks the text, generates embeddings, and stores in ChromaDB.
     """
     try:
-        chunks = chunk_text(request.content)
+        chunks, total_pages = chunk_text(request.content)
 
         if not chunks:
             raise HTTPException(status_code=400, detail="No content could be extracted from the book.")
@@ -99,24 +131,39 @@ async def ingest_book_json(request: IngestRequestJSON):
             book_id=request.book_id,
             title=request.title,
             author=request.author,
-            total_pages=len(chunks),
+            total_pages=total_pages,
+        )
+
+        set_ingestion_status(
+            book_id=request.book_id,
+            status="completed",
+            processed_pages=total_pages,
+            total_pages=total_pages,
         )
 
         return IngestResponse(
             book_id=request.book_id,
             title=request.title,
-            total_pages=len(chunks),
+            total_pages=total_pages,
             message=f"Successfully ingested {num_stored} pages.",
         )
 
     except HTTPException:
         raise
     except Exception as exc:
+        set_ingestion_status(
+            book_id=request.book_id,
+            status="failed",
+            processed_pages=0,
+            total_pages=1,
+            error=str(exc),
+        )
         raise HTTPException(status_code=500, detail=f"Ingestion failed: {exc}")
 
 
 @app.post("/api/books/ingest/pdf", response_model=IngestResponse)
 async def ingest_book_pdf(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     book_id: str = Form(...),
     title: str = Form(...),
@@ -124,9 +171,15 @@ async def ingest_book_pdf(
 ):
     """
     Ingest a book from a PDF file upload.
-    Extracts text per page, generates embeddings, and stores in ChromaDB.
+    Extracts text per page, generates embeddings, and stores in SQLite
+    vector store. Runs in the background to prevent long requests from
+    timing out.
     """
-    if file.content_type and file.content_type != "application/pdf":
+    # Validate by both content-type and file extension
+    filename = file.filename or ""
+    if not filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=415, detail="Only .pdf files are accepted.")
+    if file.content_type and file.content_type not in ("application/pdf", "application/octet-stream"):
         raise HTTPException(status_code=415, detail="Only PDF files are accepted.")
 
     try:
@@ -137,28 +190,84 @@ async def ingest_book_pdf(
         if not pdf_bytes:
             raise HTTPException(status_code=400, detail="The uploaded file is empty (0 bytes received).")
 
-        chunks = chunk_pdf(pdf_bytes)
+        # Get total pages instantly without parsing all text
+        total_pages = get_pdf_page_count(pdf_bytes)
+        if total_pages == 0:
+            raise HTTPException(status_code=400, detail="Could not read PDF structure. File may be corrupted.")
 
-        if not chunks:
-            raise HTTPException(
-                status_code=400,
-                detail="No text could be extracted from the PDF. It may be a scanned document.",
-            )
-
-        num_stored = store_chunks(book_id, chunks)
-
+        # Store metadata immediately so the UI knows the book exists
         store_book_metadata(
             book_id=book_id,
             title=title,
             author=author,
-            total_pages=len(chunks),
+            total_pages=total_pages,
         )
+
+        # Initialize ingestion tracking
+        set_ingestion_status(
+            book_id=book_id,
+            status="processing",
+            processed_pages=0,
+            total_pages=total_pages,
+        )
+
+        # Background worker for the heavy CPU tasks
+        async def process_pdf_in_background():
+            try:
+                print(f"[BookBot] Background ingestion started for '{book_id}'...")
+                loop = asyncio.get_event_loop()
+                
+                # Chunking takes a few seconds (GIL held, but acceptable)
+                chunks, extracted_pages = await loop.run_in_executor(None, chunk_pdf, pdf_bytes)
+                
+                if chunks:
+                    # Store in batches of 10 to allow the event loop to breathe and serve requests
+                    stored_count = 0
+                    for i in range(0, len(chunks), 10):
+                        batch = chunks[i:i+10]
+                        await loop.run_in_executor(None, partial(store_chunks, book_id, batch))
+                        stored_count += len(batch)
+                        set_ingestion_status(
+                            book_id=book_id,
+                            status="processing",
+                            processed_pages=min(stored_count, total_pages),
+                            total_pages=total_pages,
+                        )
+                        await asyncio.sleep(0.05)  # Yield to event loop
+                        
+                    set_ingestion_status(
+                        book_id=book_id,
+                        status="completed",
+                        processed_pages=total_pages,
+                        total_pages=total_pages,
+                    )
+                    print(f"[BookBot] Background ingestion completed for '{book_id}'.")
+                else:
+                    set_ingestion_status(
+                        book_id=book_id,
+                        status="failed",
+                        processed_pages=0,
+                        total_pages=total_pages,
+                        error="No readable text could be extracted from this PDF.",
+                    )
+                    print(f"[BookBot] ❌ No text extracted for '{book_id}'.")
+            except Exception as e:
+                set_ingestion_status(
+                    book_id=book_id,
+                    status="failed",
+                    processed_pages=0,
+                    total_pages=total_pages,
+                    error=str(e),
+                )
+                print(f"[BookBot] ❌ Background ingestion failed for '{book_id}': {e}")
+
+        background_tasks.add_task(process_pdf_in_background)
 
         return IngestResponse(
             book_id=book_id,
             title=title,
-            total_pages=len(chunks),
-            message=f"Successfully ingested {num_stored} pages from PDF.",
+            total_pages=total_pages,
+            message=f"Upload complete. Processing {total_pages} pages in the background...",
         )
 
     except HTTPException:
@@ -178,6 +287,7 @@ async def chat(request: ChatRequest):
         raise HTTPException(status_code=404, detail=f"Book '{request.book_id}' not found. Please ingest it first.")
 
     update_session(request.user_id, request.book_id, request.current_page)
+    record_chat_interaction(request.user_id)
 
     message_lower = request.message.lower().strip()
     recent_history = _format_recent_history(request.history)
@@ -186,6 +296,11 @@ async def chat(request: ChatRequest):
         page_summary_request = _resolve_page_summary_request(message_lower, request.current_page)
         if page_summary_request is not None:
             target_page, page_label = page_summary_request
+            if target_page > request.current_page:
+                return ChatResponse(
+                    reply="I can't reveal that - you haven't reached that part yet! Keep reading 📖",
+                    sources=[],
+                )
             page_content = get_page_chunk(request.book_id, target_page)
             if page_content:
                 context_text = f"[Page {target_page}]\n{page_content}"
@@ -199,7 +314,7 @@ async def chat(request: ChatRequest):
                         "Do not summarize the whole book so far."
                     ),
                 )
-                reply = chat_with_groq(system_prompt, user_prompt)
+                reply = await async_chat_with_groq(system_prompt, user_prompt)
                 return ChatResponse(reply=reply, sources=[target_page])
 
         if any(kw in message_lower for kw in ["summarize", "summary", "what happened so far", "recap everything"]):
@@ -215,7 +330,7 @@ async def chat(request: ChatRequest):
                 book.title, book.author, request.current_page, context_text
             )
             user_prompt = _combine_user_prompt(recent_history, build_summary_prompt(request.current_page))
-            reply = chat_with_groq(system_prompt, user_prompt)
+            reply = await async_chat_with_groq(system_prompt, user_prompt)
 
             return ChatResponse(reply=reply, sources=context_data.get("page_numbers", []))
 
@@ -237,7 +352,7 @@ async def chat(request: ChatRequest):
                     recent_history,
                     f"{build_page_explain_prompt(target_page)} Focus only on {page_label}.",
                 )
-                reply = chat_with_groq(system_prompt, user_prompt)
+                reply = await async_chat_with_groq(system_prompt, user_prompt)
                 return ChatResponse(reply=reply, sources=[target_page])
 
             return ChatResponse(
@@ -258,7 +373,7 @@ async def chat(request: ChatRequest):
                 book.title, book.author, request.current_page, context_text
             )
             user_prompt = _combine_user_prompt(recent_history, build_catchup_prompt(request.current_page))
-            reply = chat_with_groq(system_prompt, user_prompt)
+            reply = await async_chat_with_groq(system_prompt, user_prompt)
             return ChatResponse(reply=reply, sources=context_data.get("page_numbers", []))
 
         who_match = re.search(r"who\s+is\s+(.+?)[\?\.]?$", message_lower)
@@ -278,7 +393,7 @@ async def chat(request: ChatRequest):
                 recent_history,
                 build_character_prompt(character_name, request.current_page),
             )
-            reply = chat_with_groq(system_prompt, user_prompt)
+            reply = await async_chat_with_groq(system_prompt, user_prompt)
             return ChatResponse(reply=reply, sources=context_data.get("page_numbers", []))
 
         retrieval_query = request.message
@@ -294,10 +409,14 @@ async def chat(request: ChatRequest):
         )
 
         user_prompt = _combine_user_prompt(recent_history, request.message)
-        reply = chat_with_groq(system_prompt, user_prompt)
 
-        suggestions = generate_suggestions(
-            book.title, book.author, request.current_page, context_text
+        # Issue 17+18: Fire answer and suggestions concurrently — halves latency
+        reply, suggestions = await asyncio.gather(
+            async_chat_with_groq(system_prompt, user_prompt),
+            asyncio.to_thread(
+                generate_suggestions,
+                book.title, book.author, request.current_page, context_text
+            ),
         )
 
         return ChatResponse(
@@ -313,7 +432,7 @@ async def chat(request: ChatRequest):
 
 
 @app.get("/api/session/{user_id}/{book_id}", response_model=SessionResponse)
-async def get_reading_session(user_id: str, book_id: str):
+def get_reading_session(user_id: str, book_id: str):
     """Get the current reading progress and stats for a user and book."""
     session = get_session(user_id, book_id)
     stats = get_user_stats(user_id)
@@ -335,7 +454,7 @@ async def get_reading_session(user_id: str, book_id: str):
 
 
 @app.post("/api/session/sync", response_model=SessionResponse)
-async def sync_session(request: SessionSyncRequest):
+def sync_session(request: SessionSyncRequest):
     """
     Webhook endpoint for reading platforms.
     Updates the user's current page and awards XP.
@@ -357,7 +476,7 @@ async def sync_session(request: SessionSyncRequest):
 
 
 @app.get("/api/books/suggestions/{book_id}/{current_page}", response_model=SuggestionsResponse)
-async def get_smart_suggestions(book_id: str, current_page: int):
+def get_smart_suggestions(book_id: str, current_page: int):
     """Generate 3 smart conversation starters based on the current page."""
     book = get_book_metadata(book_id)
     if not book:
@@ -371,7 +490,7 @@ async def get_smart_suggestions(book_id: str, current_page: int):
 
 
 @app.get("/api/books/quote/{book_id}/{current_page}")
-async def get_book_quote(book_id: str, current_page: int):
+def get_book_quote(book_id: str, current_page: int):
     """Retrieve a random beautiful quote from the pages read so far."""
     book = get_book_metadata(book_id)
     if not book:
@@ -385,7 +504,7 @@ async def get_book_quote(book_id: str, current_page: int):
 
 
 @app.get("/api/books/page/{book_id}/{page_number}")
-async def get_book_page(book_id: str, page_number: int):
+def get_book_page(book_id: str, page_number: int):
     """Retrieve the text content for a specific page."""
     book = get_book_metadata(book_id)
     if not book:
@@ -396,18 +515,15 @@ async def get_book_page(book_id: str, page_number: int):
 
     content = get_page_chunk(book_id, page_number)
     if not content:
-        page_type = "cover" if page_number == 1 else "image_only"
+        msg = "⏳ This page is currently being processed in the background. It will be available shortly..."
+
         return {
             "page_number": page_number,
-            "page_type": page_type,
+            "page_type": "processing",
             "content": None,
             "title": book.title,
             "author": book.author,
-            "message": (
-                "This page appears to be the book cover or an illustration page."
-                if page_type == "cover"
-                else "This page appears to be image-based, so no readable text could be extracted."
-            ),
+            "message": msg,
         }
 
     return {
@@ -416,11 +532,12 @@ async def get_book_page(book_id: str, page_number: int):
         "content": content,
         "title": book.title,
         "author": book.author,
+        "message": "",
     }
 
 
 @app.get("/api/books", response_model=list[BookListItem])
-async def get_books():
+def get_books():
     """List all ingested books."""
     books = list_books()
     return [
@@ -432,6 +549,45 @@ async def get_books():
         )
         for book in books
     ]
+
+
+@app.get("/api/books/{book_id}/status", response_model=IngestionStatusResponse)
+def get_book_status(book_id: str):
+    """Check the background processing and embedding status of a book."""
+    status = get_ingestion_status(book_id)
+    if not status:
+        raise HTTPException(status_code=404, detail=f"Book '{book_id}' not found.")
+    return IngestionStatusResponse(**status)
+
+
+@app.delete("/api/books/{book_id}")
+def delete_book_endpoint(book_id: str):
+    """
+    Delete a book and all its associated content embeddings and session data.
+    """
+    book = get_book_metadata(book_id)
+    if not book:
+        # If metadata not found, attempt vector cleanup anyway
+        delete_book_collection(book_id)
+        delete_book_data(book_id)
+        return {"message": f"Cleaned up data for book '{book_id}'."}
+
+    delete_book_collection(book_id)
+    delete_book_data(book_id)
+
+    return {"message": f"Successfully removed book '{book.title}' and all associated content data."}
+
+
+@app.delete("/api/books")
+def clear_all_books_endpoint():
+    """
+    Delete all books, content embeddings, and session data.
+    """
+    delete_all_collections()
+    clear_all_books_data()
+
+    return {"message": "Successfully cleared all books and content data from BookBot."}
+
 
 
 def _format_context(context_data: dict) -> str:
@@ -505,8 +661,7 @@ def _resolve_requested_page(message_lower: str, current_page: int):
     page_match = re.search(r"(?:page|pg\.?)\s*(?:number|no\.?)?\s*(\d+)", message_lower)
     if page_match:
         target_page = int(page_match.group(1))
-        if target_page <= current_page:
-            return (target_page, f"page {target_page}")
+        return (target_page, f"page {target_page}")
 
     return None
 
