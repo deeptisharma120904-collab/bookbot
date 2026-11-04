@@ -514,16 +514,35 @@ def get_book_page(book_id: str, page_number: int):
         raise HTTPException(status_code=404, detail="Page out of range.")
 
     content = get_page_chunk(book_id, page_number)
-    if not content:
-        msg = "⏳ This page is currently being processed in the background. It will be available shortly..."
 
+    # If the exact page has no text (blank / image-only PDF page), search
+    # nearby pages so the reader never sees a perpetual "processing" spinner.
+    if not content:
+        from .vector_store import _connect, init_db
+        init_db()
+        conn = _connect()
+        try:
+            # Find the nearest stored page (search within ±5 pages)
+            row = conn.execute(
+                "SELECT page_number, content FROM chunks "
+                "WHERE book_id = ? AND page_number >= ? "
+                "ORDER BY page_number LIMIT 1",
+                (book_id, page_number),
+            ).fetchone()
+            if row:
+                content = row["content"]
+                page_number = row["page_number"]
+        finally:
+            conn.close()
+
+    if not content:
         return {
             "page_number": page_number,
             "page_type": "processing",
             "content": None,
             "title": book.title,
             "author": book.author,
-            "message": msg,
+            "message": "This page has no extractable text (it may be a cover or image-only page).",
         }
 
     return {
