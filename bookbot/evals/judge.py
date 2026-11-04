@@ -72,7 +72,7 @@ def _get_client() -> Groq:
     return _CLIENT_SINGLETON
 
 
-MAX_RETRIES    = 10
+MAX_RETRIES    = 5
 RETRY_DELAY_S  = 3.0
 
 
@@ -86,17 +86,6 @@ class JudgeResult:
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
-
-def _parse_retry_after(err_str: str) -> float:
-    """Extract retry-after seconds from Groq error message."""
-    m_min = re.search(r"try again in (\d+)m([\d\.]+)s", err_str)
-    if m_min:
-        return float(m_min.group(1)) * 60 + float(m_min.group(2)) + 2.0
-    m_sec = re.search(r"try again in ([\d\.]+)s", err_str)
-    if m_sec:
-        return float(m_sec.group(1)) + 2.0
-    return 25.0
-
 
 def _call(client: Groq, system: str, user: str) -> str:
     """Call the judge model with exponential backoff & rate limit handling."""
@@ -117,9 +106,8 @@ def _call(client: Groq, system: str, user: str) -> str:
         except Exception as exc:
             err_msg = str(exc).lower()
             if "rate limit" in err_msg or "429" in err_msg:
-                wait_sec = _parse_retry_after(str(exc))
-                print(f"\n    [Judge Rate Limit] Waiting {wait_sec:.1f}s (attempt {attempt}/{MAX_RETRIES})...", flush=True)
-                time.sleep(wait_sec)
+                print(f"\n    [Judge Rate Limit] Attempt {attempt}/{MAX_RETRIES}, cooling down for 25s...", flush=True)
+                time.sleep(25.0)
             elif "timeout" in err_msg:
                 print(f"\n    [Judge Timeout] Attempt {attempt}/{MAX_RETRIES}, retrying...", flush=True)
                 time.sleep(5.0)

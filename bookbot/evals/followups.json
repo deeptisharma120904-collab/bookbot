@@ -1,0 +1,74 @@
+[
+  {
+    "id": "fo01",
+    "type": "answerable",
+    "history": [
+      {
+        "role": "user",
+        "content": "Who is Aman?"
+      },
+      {
+        "role": "assistant",
+        "content": "Aman is a man Avani meets at the bookstore where she works. Martin talks to both of them at the coffee counter."
+      }
+    ],
+    "question": "Why did he have to fly to Mussoorie?",
+    "current_page": 50,
+    "source_page": 45,
+    "expected_answer": "One of Aman's dogs fell sick, so he had to fly to Mussoorie to take care of her."
+  },
+  {
+    "id": "fo02",
+    "type": "answerable",
+    "history": [
+      {
+        "role": "user",
+        "content": "What happens when Avani and Aman are talking about their relationship?"
+      },
+      {
+        "role": "assistant",
+        "content": "They discuss how fast things have moved and how they feel about each other."
+      }
+    ],
+    "question": "How long had they known each other when he asked her to be his girlfriend?",
+    "current_page": 95,
+    "source_page": 92,
+    "expected_answer": "They had known each other for just about two weeks."
+  },
+  {
+    "id": "fo03",
+    "type": "answerable",
+    "history": [
+      {
+        "role": "user",
+        "content": "Tell me about the glass house named Bombay Bound."
+      },
+      {
+        "role": "assistant",
+        "content": "Avani visits the large mansion with Aman and meets his family."
+      }
+    ],
+    "question": "What did his mother ask her to call that woman?",
+    "current_page": 148,
+    "source_page": 147,
+    "expected_answer": "Aman's mother introduced a woman named Pooja and playfully asked Avani to call her 'bhabi' (sister-in-law)."
+  },
+  {
+    "id": "fo04",
+    "type": "answerable",
+    "history": [
+      {
+        "role": "user",
+        "content": "What was Avani doing in the library on page 71?"
+      },
+      {
+        "role": "assistant",
+        "content": "Avani was looking at the books and shelves in the library."
+      }
+    ],
+    "question": "What first-edition set did she find there?",
+    "current_page": 75,
+    "source_page": 71,
+    "expected_answer": "She noticed a first-edition set of Dickens's best works."
+  }
+]

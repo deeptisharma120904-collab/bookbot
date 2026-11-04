@@ -35,7 +35,7 @@ sys.path.insert(0, str(_BOOKBOT_DIR))
 load_dotenv(_BOOKBOT_DIR / ".env")
 
 from backend.retrieval import retrieve_context
-from backend.llm import build_system_prompt, get_groq_client
+from backend.llm import build_system_prompt, get_groq_client, rewrite_query
 from backend.session import get_book_metadata
 from evals.metrics import (
     hit_at_k,
@@ -145,8 +145,17 @@ async def evaluate_question(
 
     # 1. Retrieval
     t0 = time.perf_counter()
+    history = q.get("history", [])
+    search_query = question_text
+    rewritten_query = None
+    if os.getenv("RETRIEVAL_MODE") == "rewrite" and history:
+        rewritten_query = await asyncio.to_thread(
+            rewrite_query, question_text, history, book_title
+        )
+        search_query = rewritten_query
+
     retrieved = retrieve_context(
-        query=question_text,
+        query=search_query,
         book_id=book_id,
         current_page=current_page,
         top_k=top_k,
@@ -175,6 +184,7 @@ async def evaluate_question(
         "id": qid,
         "type": qtype,
         "question": question_text,
+        "rewritten_query": rewritten_query,
         "current_page": current_page,
         "source_page": source_page,
         "expected_answer": expected_answer,
@@ -414,8 +424,8 @@ def main():
     parser.add_argument(
         "--mode",
         default=os.getenv("RETRIEVAL_MODE", "dense"),
-        choices=["dense", "hybrid"],
-        help="Retrieval mode: dense (baseline cosine) or hybrid (BM25+RRF)",
+        choices=["dense", "hybrid", "rewrite"],
+        help="Retrieval mode: dense (baseline cosine), hybrid (BM25+RRF), or rewrite (query rewriting)",
     )
     args = parser.parse_args()
 

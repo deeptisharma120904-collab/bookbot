@@ -3,14 +3,29 @@ BookBot — LLM integration via Groq API.
 Builds anti-spoiler system prompts and handles chat completions.
 """
 
+import asyncio
+import json
 import os
-from typing import List, Optional
+import re
+from pathlib import Path
+from typing import Dict, List, Optional
+from dotenv import load_dotenv
 from groq import Groq
+
+# ── Load .env from bookbot/.env or project root regardless of cwd ────────────
+_THIS_DIR = Path(__file__).resolve().parent
+_BOOKBOT_DIR = _THIS_DIR.parent
+_PROJECT_DIR = _BOOKBOT_DIR.parent
+
+for _candidate in [_BOOKBOT_DIR / ".env", _PROJECT_DIR / ".env", Path(".env")]:
+    if _candidate.exists():
+        load_dotenv(_candidate)
+        break
 
 
 # ─── Groq Client (singleton) ──────────────────────────────────────────
 
-_groq_client: Groq = None
+_groq_client: Optional[Groq] = None
 
 
 def get_groq_client() -> Groq:
@@ -18,6 +33,11 @@ def get_groq_client() -> Groq:
     global _groq_client
     if _groq_client is None:
         api_key = os.getenv("GROQ_API_KEY")
+        if not api_key:
+            env_file = _BOOKBOT_DIR / ".env"
+            if env_file.exists():
+                load_dotenv(env_file, override=True)
+                api_key = os.getenv("GROQ_API_KEY")
         if not api_key:
             raise ValueError(
                 "GROQ_API_KEY environment variable is not set. "
@@ -105,8 +125,6 @@ def generate_suggestions(
     try:
         response = chat_with_groq(system_prompt, full_user_prompt, max_tokens=256)
         # Simple extraction of JSON list
-        import json
-        import re
         match = re.search(r'\[.*\]', response, re.DOTALL)
         if match:
             return json.loads(match.group())
@@ -135,8 +153,6 @@ def generate_quote(
     
     try:
         response = chat_with_groq(system_prompt, full_prompt, max_tokens=256)
-        import json
-        import re
         match = re.search(r'\{.*\}', response, re.DOTALL)
         if match:
             return json.loads(match.group())
@@ -241,7 +257,7 @@ def chat_with_groq(
         The LLM's response text
     """
     client = get_groq_client()
-    model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+    model = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
 
     try:
         chat_completion = client.chat.completions.create(
@@ -259,3 +275,101 @@ def chat_with_groq(
     except Exception as e:
         print(f"[BookBot] Groq API error: {e}")
         raise
+
+
+async def async_chat_with_groq(
+    system_prompt: str,
+    user_message: str,
+    temperature: float = 0.7,
+    max_tokens: int = 1024
+) -> str:
+    """
+    Async-safe wrapper around `chat_with_groq`.
+    Offloads the blocking Groq SDK call to a thread-pool worker so the
+    FastAPI event loop is never blocked.
+    """
+    return await asyncio.to_thread(
+        chat_with_groq, system_prompt, user_message, temperature, max_tokens
+    )
+
+
+# ─── Query Rewriter (Follow-ups) ──────────────────────────────────────────────
+
+_REWRITE_SYSTEM = """You are a search query rewriting assistant for a book reading assistant.
+Your task: take the conversational history and a follow-up user query, and rewrite it into a single, self-contained search query.
+
+Rules:
+- Resolve all ambiguous pronouns ("he", "she", "it", "they", "that", "this", "him", "her", "there", "then") to the specific character or event from the recent history.
+- Preserve the user's intent precisely.
+- Do NOT answer the question.
+- Do NOT add unnecessary fluff, explanations, or quotes.
+- Output ONLY the rewritten standalone query."""
+
+
+def rewrite_query(
+    query: str,
+    history: List[Dict[str, str]],
+    book_title: str = "",
+) -> str:
+    """
+    Rewrite a follow-up query into a standalone search query using chat history.
+    If history is empty or query is already explicit, returns original query.
+    """
+    if not history or not query.strip():
+        return query.strip()
+
+    # Quick check if query contains pronouns or conversational markers
+    pronoun_pattern = re.compile(
+        r'\b(he|she|it|they|him|her|them|his|their|that|this|there|then|why did|what happened)\b',
+        re.IGNORECASE,
+    )
+    if not pronoun_pattern.search(query):
+        return query.strip()
+
+    client = get_groq_client()
+    model = os.getenv("JUDGE_MODEL", "allam-2-7b")
+
+    history_lines = []
+    for msg in history[-4:]:
+        role = "User" if msg.get("role") in ("user", "human") else "Assistant"
+        content = str(msg.get("content", "")).strip()
+        if content:
+            history_lines.append(f"{role}: {content[:300]}")
+
+    if not history_lines:
+        return query.strip()
+
+    user_text = (
+        f"Book: {book_title}\n\n"
+        f"Recent Conversation:\n" + "\n".join(history_lines) + "\n\n"
+        f"Follow-up Query: {query}\n\n"
+        f"Standalone Search Query:"
+    )
+
+    try:
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": _REWRITE_SYSTEM},
+                {"role": "user", "content": user_text},
+            ],
+            temperature=0.0,
+            max_tokens=64,
+            timeout=10.0,
+        )
+        rewritten = (resp.choices[0].message.content or "").strip().strip('"\'')
+        if rewritten and len(rewritten) > 3:
+            return rewritten
+    except Exception as exc:
+        print(f"[BookBot] Query rewrite fallback to original: {exc}")
+
+    return query.strip()
+
+
+async def async_rewrite_query(
+    query: str,
+    history: List[Dict[str, str]],
+    book_title: str = "",
+) -> str:
+    """Async-safe wrapper around `rewrite_query`."""
+    return await asyncio.to_thread(rewrite_query, query, history, book_title)

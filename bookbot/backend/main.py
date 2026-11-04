@@ -23,6 +23,7 @@ from .llm import (
     build_summary_prompt,
     build_system_prompt,
     async_chat_with_groq,
+    async_rewrite_query,
     chat_with_groq,
     generate_quote,
     generate_suggestions,
@@ -397,6 +398,14 @@ async def chat(request: ChatRequest):
             return ChatResponse(reply=reply, sources=context_data.get("page_numbers", []))
 
         retrieval_query = request.message
+        if os.getenv("RETRIEVAL_MODE") == "rewrite" and request.history:
+            history_dicts = [{"role": m.role, "content": m.content} for m in request.history]
+            retrieval_query = await async_rewrite_query(
+                request.message,
+                history_dicts,
+                book_title=book.title,
+            )
+
         context_data = retrieve_context(
             query=retrieval_query,
             book_id=request.book_id,
