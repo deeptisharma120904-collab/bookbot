@@ -4,10 +4,11 @@ Stores reading progress per user per book in-memory (V1).
 Can be upgraded to Redis or a database in production.
 """
 
-from datetime import datetime
+import json
+import os
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional, List
 from .models import UserSession, BookMetadata, UserStats
-from datetime import timedelta
 
 
 # ─── In-Memory Stores ─────────────────────────────────────────────────
@@ -20,6 +21,49 @@ _user_stats: Dict[str, UserStats] = {}
 
 # Key: book_id → BookMetadata
 _books: Dict[str, BookMetadata] = {}
+
+# Key: book_id → dict of ingestion status
+_ingestion_status: Dict[str, Dict] = {}
+
+
+def set_ingestion_status(
+    book_id: str,
+    status: str,
+    processed_pages: int,
+    total_pages: int,
+    error: Optional[str] = None
+):
+    """Update background ingestion progress for a book."""
+    total = max(1, total_pages)
+    percentage = round(min(100.0, (processed_pages / total) * 100.0), 1)
+    _ingestion_status[book_id] = {
+        "book_id": book_id,
+        "status": status,
+        "processed_pages": processed_pages,
+        "total_pages": total_pages,
+        "progress_percentage": percentage,
+        "error": error
+    }
+
+
+def get_ingestion_status(book_id: str) -> Optional[Dict]:
+    """Retrieve the ingestion status of a book."""
+    if book_id in _ingestion_status:
+        return _ingestion_status[book_id]
+
+    # If the book already exists in metadata, it has finished ingestion
+    book = _books.get(book_id)
+    if book:
+        return {
+            "book_id": book_id,
+            "status": "completed",
+            "processed_pages": book.total_pages,
+            "total_pages": book.total_pages,
+            "progress_percentage": 100.0,
+            "error": None
+        }
+    return None
+
 
 
 # ─── Session Management ───────────────────────────────────────────────
@@ -65,7 +109,7 @@ def update_session(user_id: str, book_id: str, current_page: int) -> UserSession
                 _add_badge(stats, "Speed Reader")
     
     # Streak Logic
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     last_active = old_session.last_updated if old_session else None
     
     if last_active:
@@ -95,6 +139,8 @@ def update_session(user_id: str, book_id: str, current_page: int) -> UserSession
     # Level up logic (1000 XP per level)
     stats.level = (stats.xp // 1000) + 1
     
+    # Persist session and stats updates immediately
+    save_state_to_disk()
     return new_session
 
 
@@ -104,10 +150,31 @@ def _add_badge(stats: UserStats, badge_name: str):
         print(f"[BookBot] Achievement Unlocked: {badge_name}!")
 
 
+# Track last chat XP award per user to rate-limit XP farming
+_last_chat_xp: Dict[str, datetime] = {}
+_CHAT_XP_COOLDOWN_SECONDS = 60  # 1 award per minute max
+
+
+def record_chat_interaction(user_id: str):
+    """Award XP for chatting with the librarian and unlock Curious Mind badge.
+
+    XP is rate-limited to once per minute per user to prevent farming.
+    """
+    stats = get_user_stats(user_id)
+    now = datetime.now(timezone.utc)
+    last = _last_chat_xp.get(user_id)
+    if last is None or (now - last).total_seconds() >= _CHAT_XP_COOLDOWN_SECONDS:
+        stats.xp += 5
+        stats.level = (stats.xp // 1000) + 1
+        _last_chat_xp[user_id] = now
+    _add_badge(stats, "Curious Mind")
+    save_state_to_disk()
+
+
 # ─── Book Metadata Management ─────────────────────────────────────────
 
 def store_book_metadata(book_id: str, title: str, author: str, total_pages: int) -> BookMetadata:
-    """Store metadata about an ingested book."""
+    """Store metadata about an ingested book and immediately persist to disk."""
     metadata = BookMetadata(
         book_id=book_id,
         title=title,
@@ -115,6 +182,9 @@ def store_book_metadata(book_id: str, title: str, author: str, total_pages: int)
         total_pages=total_pages
     )
     _books[book_id] = metadata
+    # Persist immediately so the book survives server restarts and --reload cycles.
+    # uvicorn --reload only watches .py files, so writing .json does NOT trigger a reload.
+    save_state_to_disk()
     return metadata
 
 
@@ -127,10 +197,38 @@ def list_books() -> List[BookMetadata]:
     """List all ingested books."""
     return list(_books.values())
 
-# ─── State Persistence ────────────────────────────────────────────────
 
-import json
-import os
+def delete_book_data(book_id: str) -> bool:
+    """Delete metadata and session records for a specific book."""
+    global _books, _sessions, _ingestion_status
+    found = False
+    if book_id in _books:
+        del _books[book_id]
+        found = True
+
+    _ingestion_status.pop(book_id, None)
+
+    keys_to_delete = [k for k in _sessions.keys() if k.endswith(f":{book_id}")]
+    for k in keys_to_delete:
+        del _sessions[k]
+        found = True
+
+    if found:
+        save_state_to_disk()
+    return found
+
+
+def clear_all_books_data() -> bool:
+    """Clear all book metadata and session records."""
+    global _books, _sessions, _ingestion_status
+    _books.clear()
+    _sessions.clear()
+    _ingestion_status.clear()
+    save_state_to_disk()
+    return True
+
+
+# ─── State Persistence ────────────────────────────────────────────────
 
 PERSISTENCE_FILE = os.path.join(os.path.dirname(__file__), '..', 'bookbot_state.json')
 
@@ -139,13 +237,13 @@ def save_state_to_disk():
     print("\n[BookBot] Persisting state to disk...")
     try:
         state = {
-            "sessions": {k: v.dict() for k, v in _sessions.items()},
-            "user_stats": {k: v.dict() for k, v in _user_stats.items()},
-            "books": {k: v.dict() for k, v in _books.items()},
+            "sessions": {k: v.model_dump() if hasattr(v, 'model_dump') else v.dict() for k, v in _sessions.items()},
+            "user_stats": {k: v.model_dump() if hasattr(v, 'model_dump') else v.dict() for k, v in _user_stats.items()},
+            "books": {k: v.model_dump() if hasattr(v, 'model_dump') else v.dict() for k, v in _books.items()},
         }
         with open(PERSISTENCE_FILE, 'w') as f:
             json.dump(state, f, indent=2, default=str) # default=str for datetime
-        print(f"[BookBot] Successfully saved state for {_books.__len__()} books to {PERSISTENCE_FILE}")
+        print(f"[BookBot] Successfully saved state for {len(_books)} books to {PERSISTENCE_FILE}")
     except Exception as e:
         print(f"[BookBot] Error saving state: {e}")
 

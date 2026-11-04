@@ -124,13 +124,12 @@ export function useBookBot() {
   }, []);
   // ─── Get page content ───────────────────────────────────────
   const getPage = useCallback(async (bookId, pageNumber) => {
-    try {
-      const res = await fetch(`${API_BASE}/books/page/${bookId}/${pageNumber}`);
-      if (!res.ok) return null;
-      return await res.json();
-    } catch {
-      return null;
+    const res = await fetch(`${API_BASE}/books/page/${bookId}/${pageNumber}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `Failed to load page (HTTP ${res.status})`);
     }
+    return await res.json();
   }, []);
 
   // ─── Get smart suggestions ──────────────────────────────────
@@ -168,6 +167,46 @@ export function useBookBot() {
     }
   }, []);
 
+  // ─── Delete a book ──────────────────────────────────────────
+  const deleteBook = useCallback(async (bookId) => {
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/books/${bookId}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Failed to delete book (${res.status})`);
+      }
+      const data = await res.json();
+      await listBooks();
+      return data;
+    } catch (e) {
+      setError(e.message);
+      throw e;
+    }
+  }, [listBooks]);
+
+  // ─── Clear all books ────────────────────────────────────────
+  const clearAllBooks = useCallback(async () => {
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/books`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Failed to clear library (${res.status})`);
+      }
+      const data = await res.json();
+      await listBooks();
+      return data;
+    } catch (e) {
+      setError(e.message);
+      throw e;
+    }
+  }, [listBooks]);
+
   // ─── Clear error ────────────────────────────────────────────
   const clearError = useCallback(() => setError(null), []);
 
@@ -180,6 +219,8 @@ export function useBookBot() {
     stats,
     ingestBook,
     ingestBookPdf,
+    deleteBook,
+    clearAllBooks,
     sendMessage,
     getSession,
     syncPage,
@@ -190,3 +231,4 @@ export function useBookBot() {
     clearError,
   };
 }
+

@@ -1,34 +1,70 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 function BookReader({ book, currentPage, getPage, loading: externalLoading, onPageChange }) {
   const [pageData, setPageData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+  const timerRef = useRef(null);
 
-  useEffect(() => {
+  const fetchPage = useCallback(async (attempt = 0) => {
     if (!book) return;
 
-    const fetchPage = async () => {
+    if (attempt === 0) {
       setLoading(true);
       setError(null);
-      try {
-        const data = await getPage(book.book_id, currentPage);
-        if (data) {
-          setPageData(data);
-        } else {
-          setError('Page content not found.');
-          setPageData(null);
-        }
-      } catch (err) {
-        setError('Failed to load page content.');
+      setIsProcessing(false);
+      setRetryCount(0);
+    }
+
+    try {
+      const data = await getPage(book.book_id, currentPage);
+      if (data?.page_type === 'processing') {
         setPageData(null);
-      } finally {
+        setIsProcessing(true);
+        setRetryCount(attempt + 1);
+
+        // Retry polling up to 25 times (~60 seconds)
+        if (attempt < 25) {
+          timerRef.current = setTimeout(() => {
+            fetchPage(attempt + 1);
+          }, 2500);
+        } else {
+          setError('⏳ Processing is taking longer than usual. Please check back shortly.');
+          setIsProcessing(false);
+        }
+      } else {
+        setPageData(data);
+        setIsProcessing(false);
+        setError(null);
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to load page content.');
+      setPageData(null);
+      setIsProcessing(false);
+    } finally {
+      if (attempt === 0) {
         setLoading(false);
       }
-    };
-
-    fetchPage();
+    }
   }, [book, currentPage, getPage]);
+
+  useEffect(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+    }
+    fetchPage(0);
+
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+      }
+    };
+    // fetchPage is stable — defined via useCallback([book, currentPage, getPage]).
+    // If getPage is ever recreated without useCallback in the hook, add it there,
+    // not here — otherwise this effect will re-fire on every render.
+  }, [fetchPage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!book) {
     return (
@@ -87,11 +123,38 @@ function BookReader({ book, currentPage, getPage, loading: externalLoading, onPa
               Turning Page...
             </p>
           </div>
+        ) : isProcessing ? (
+          <div className="flex items-center justify-center h-full">
+            <div className="p-8 max-w-md rounded-2xl bg-amber-500/10 border border-amber-500/20 text-center animate-fade-in shadow-xl backdrop-blur-sm">
+              <div className="w-12 h-12 border-3 border-amber-400 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+              <h4 className="text-amber-200 font-semibold text-lg mb-2">Preparing Page {currentPage}</h4>
+              <p className="text-amber-300/80 text-sm mb-5 leading-relaxed">
+                This page is currently being processed and indexed in the background. It will appear automatically once ready.
+              </p>
+              <div className="flex items-center justify-center gap-3">
+                <span className="text-xs text-amber-400/60 font-mono">
+                  Auto-checking... ({retryCount})
+                </span>
+                <button
+                  onClick={() => fetchPage(0)}
+                  className="px-3 py-1.5 text-xs rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 transition-all font-medium border border-amber-500/30"
+                >
+                  Check Now
+                </button>
+              </div>
+            </div>
+          </div>
         ) : error ? (
           <div className="flex items-center justify-center h-full">
-            <div className="p-6 rounded-2xl bg-red-500/10 border border-red-500/20 text-center">
+            <div className="p-6 max-w-md rounded-2xl bg-red-500/10 border border-red-500/20 text-center animate-fade-in">
               <span className="text-3xl mb-2 block">⚠️</span>
-              <p className="text-red-300">{error}</p>
+              <p className="text-red-300 mb-4">{error}</p>
+              <button
+                onClick={() => fetchPage(0)}
+                className="px-4 py-1.5 text-xs rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-200 transition-all font-medium border border-red-500/30"
+              >
+                Retry
+              </button>
             </div>
           </div>
         ) : (
@@ -143,11 +206,13 @@ function BookReader({ book, currentPage, getPage, loading: externalLoading, onPa
                     // Fix PDF hard wrapping:
                     // 1. Standardize newlines
                     .replace(/\r\n/g, '\n')
-                    // 2. Identify true paragraphs (separated by blank lines) and replace with placeholder
+                    // 2. Fix hyphenated words split across lines
+                    .replace(/(\w+)-\n(\w+)/g, '$1$2')
+                    // 3. Identify true paragraphs (separated by blank lines) and replace with placeholder
                     .replace(/\n\s*\n/g, '___PARAGRAPH___')
-                    // 3. For any remaining single newlines (hard wrapping), replace with a space
+                    // 4. For any remaining single newlines (hard wrapping), replace with a space
                     .replace(/\n/g, ' ')
-                    // 4. Split back into actual paragraphs
+                    // 5. Split back into actual paragraphs
                     .split('___PARAGRAPH___')
                     .map((paragraph, index) => {
                       const pText = paragraph.trim();

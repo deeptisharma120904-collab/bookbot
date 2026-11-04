@@ -85,6 +85,8 @@ export default function PageSlider({ currentPage, totalPages, onPageChange, disa
           onChange={handleChange}
           onMouseUp={handleCommit}
           onTouchEnd={handleCommit}
+          onKeyUp={handleCommit}
+          onBlur={handleCommit}
           disabled={disabled || totalPages === 0}
           className="relative w-full h-6 appearance-none bg-transparent cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed z-10"
           style={{

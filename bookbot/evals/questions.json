@@ -1,0 +1,207 @@
+[
+  {
+    "id": "q01",
+    "type": "answerable",
+    "question": "According to the narrator, how long had she known the man when he asked her to be his girlfriend?",
+    "current_page": 92,
+    "expected_answer": "They had known each other for just about two weeks.",
+    "source_page": 92,
+    "forbidden_terms": []
+  },
+  {
+    "id": "q02",
+    "type": "answerable",
+    "question": "What book does the narrator identify as a first-edition copy while holding it?",
+    "current_page": 72,
+    "expected_answer": "The Pickwick Papers",
+    "source_page": 72,
+    "forbidden_terms": []
+  },
+  {
+    "id": "q03",
+    "type": "answerable",
+    "question": "What specific physical action did Aman perform that allowed the narrator to hide her unsteadiness from him?",
+    "current_page": 53,
+    "expected_answer": "Aman turned away to call Ashok, so he did not see the wobble in her knees as she bent down to pick up her bag and stood up.",
+    "source_page": 53,
+    "forbidden_terms": []
+  },
+  {
+    "id": "q04",
+    "type": "answerable",
+    "question": "What specific phrase does Aman use to greet the narrator when he first speaks to her?",
+    "current_page": 203,
+    "expected_answer": "He says, 'Hi, gorgeous.'",
+    "source_page": 203,
+    "forbidden_terms": []
+  },
+  {
+    "id": "q05",
+    "type": "answerable",
+    "question": "Why was Aman able to sit right under the Gateway of India at night after it had closed to visitors?",
+    "current_page": 109,
+    "expected_answer": "His company made the flags hoisted on all official buildings and historical sites in the country, which gave him special access.",
+    "source_page": 109,
+    "forbidden_terms": []
+  },
+  {
+    "id": "q06",
+    "type": "answerable",
+    "question": "What is the name of the group that Rhea leads, which the narrator is concerned about because Rhea tends to interpret every situation as a cosmic sign?",
+    "current_page": 25,
+    "expected_answer": "Romantics Anonymous",
+    "source_page": 25,
+    "forbidden_terms": []
+  },
+  {
+    "id": "q07",
+    "type": "answerable",
+    "question": "According to the passage, what specific role did Gagan play in the narrator's life, and how is his general demeanor described?",
+    "current_page": 162,
+    "expected_answer": "Gagan served as a secondary parent figure to whom the narrator went for life advice, and his demeanor is described as authoritative and reserved.",
+    "source_page": 162,
+    "forbidden_terms": []
+  },
+  {
+    "id": "q08",
+    "type": "answerable",
+    "question": "What specific item of clothing had Maya lent the narrator to wear for the party that evening?",
+    "current_page": 167,
+    "expected_answer": "Maya had lent the narrator an expensive ivory dress.",
+    "source_page": 167,
+    "forbidden_terms": []
+  },
+  {
+    "id": "q09",
+    "type": "answerable",
+    "question": "According to the narrator's observation, why did she initially suspect the man in the navy blue suit had been 'airdropped' into the store?",
+    "current_page": 8,
+    "expected_answer": "She suspected this because his leather shoes were spotless with not a speck of dust, which she felt was impossible for someone walking in from the street in Mumbai.",
+    "source_page": 8,
+    "forbidden_terms": []
+  },
+  {
+    "id": "q10",
+    "type": "answerable",
+    "question": "How many subjects did the narrator fail in her semester results, according to the conversation on this page?",
+    "current_page": 128,
+    "expected_answer": "She failed in three out of five subjects.",
+    "source_page": 128,
+    "forbidden_terms": []
+  },
+  {
+    "id": "q11",
+    "type": "answerable",
+    "question": "How does the narrator's perception of Gagan's earlier comments about Aman on Page 168 contrast with the specific accusations she recalls having been made by him on Page 169, and what internal reasoning does she use to reject the idea that her behavior caused this shift?",
+    "current_page": 169,
+    "expected_answer": "On Page 168, Gagan describes Aman as 'naive' and 'emotional' in a detached manner, whereas on Page 169, the narrator recalls Gagan explicitly calling her a 'bad decision' and a 'mistake.' She rejects the idea that her behavior caused this hostility by reasoning that Aman was present at the breakfast table and would have corrected her if she had been rude, and by noting that Gagan's mother also apologized for his behavior.",
+    "source_page": 169,
+    "forbidden_terms": []
+  },
+  {
+    "id": "q12",
+    "type": "answerable",
+    "question": "How does the narrator's internal assessment of Aman's romantic approach at the end of the walk contrast with the specific action he takes during their conversation about the stars?",
+    "current_page": 34,
+    "expected_answer": "The narrator concludes that Aman needs to 'do a lot better' than simply asking for her number, which directly contrasts with his earlier attempt to initiate intimacy by breaking the silence to talk about the stars, a move she deflected with humor about environmental issues.",
+    "source_page": 34,
+    "forbidden_terms": []
+  },
+  {
+    "id": "q13",
+    "type": "answerable",
+    "question": "How does the narrator's internal monologue on Page 11 regarding her preparation for a potential return visit connect to the specific interaction with the customer on Page 12?",
+    "current_page": 12,
+    "expected_answer": "On Page 11, the narrator resolves to stop dressing up for the 'Rude Hot Guy' and chooses a casual outfit, but on Page 12, it is revealed that the customer entering is indeed that same man, leading to an awkward encounter where she is called out by Martin as 'shy and awkward' despite her attempt to appear cheerful.",
+    "source_page": 12,
+    "forbidden_terms": []
+  },
+  {
+    "id": "q14",
+    "type": "answerable",
+    "question": "How does Avani's emotional state and physical preparation on Page 195 contrast with the immediate aftermath of her conversation with the man on Page 194, and what does her internal monologue reveal about her view of the 'journey' versus the 'destination'?",
+    "current_page": 195,
+    "expected_answer": "On Page 194, Avani is emotionally devastated and disillusioned, telling the man to let her go because 'good things always turn out to be an illusion,' yet on Page 195, she is calmly preparing for a 'big day' with confidence, noting that she 'almost gave up midway' but is now ready to 'take a bow.' Her monologue reveals that while she acknowledges the journey is important, she personally preferred the destination and wished to avoid the 'excruciating journey' that led her there.",
+    "source_page": 195,
+    "forbidden_terms": []
+  },
+  {
+    "id": "q15",
+    "type": "spoiler_trap",
+    "question": "Who is the person the narrator mentions by name when telling Aman not to walk into the bookstore again?",
+    "current_page": 94,
+    "expected_answer": "Professor Umbridge",
+    "source_page": 110,
+    "forbidden_terms": [
+      "Umbridge",
+      "Professor Umbridge"
+    ]
+  },
+  {
+    "id": "q16",
+    "type": "spoiler_trap",
+    "question": "After the plane lands in Dehradun, how does Arjun plan to transport Avani to their final destination for the day?",
+    "current_page": 134,
+    "expected_answer": "Papa has a chopper (helicopter) waiting for them at the Dehradun airport.",
+    "source_page": 142,
+    "forbidden_terms": [
+      "chopper",
+      "helicopter",
+      "Papa"
+    ]
+  },
+  {
+    "id": "q17",
+    "type": "spoiler_trap",
+    "question": "What color outfit is Avani wearing for her big day in January 2024?",
+    "current_page": 176,
+    "expected_answer": "A powder-blue salwar-kameez",
+    "source_page": 195,
+    "forbidden_terms": [
+      "powder-blue",
+      "salwar-kameez",
+      "Kolhapuris"
+    ]
+  },
+  {
+    "id": "q18",
+    "type": "spoiler_trap",
+    "question": "Has Aman finally shown up to talk to me yet, or is he still avoiding me?",
+    "current_page": 183,
+    "expected_answer": "Aman has appeared in person, approached the narrator, and they have left together to talk.",
+    "source_page": 203,
+    "forbidden_terms": [
+      "Aman",
+      "appeared",
+      "convention centre",
+      "parking lot"
+    ]
+  },
+  {
+    "id": "q19",
+    "type": "spoiler_trap",
+    "question": "Did I manage to pass all my semester exams without having to retake any courses?",
+    "current_page": 119,
+    "expected_answer": "No, the reader received 'REAPPEAR' marks for three out of five courses, including Advanced Company Law, Banking and Financial Law, and Corporate Insolvency Law.",
+    "source_page": 124,
+    "forbidden_terms": [
+      "REAPPEAR",
+      "retake",
+      "failed",
+      "Advanced Company Law"
+    ]
+  },
+  {
+    "id": "q20",
+    "type": "spoiler_trap",
+    "question": "Does the woman I met at the glass house, Bombay Bound, have any connection to Aman's family or past?",
+    "current_page": 147,
+    "expected_answer": "She studied law and married Anil, but the passage primarily reveals she knows Aman's childhood stories and that his parents started their company in his uncle's garage.",
+    "source_page": 165,
+    "forbidden_terms": [
+      "Anil",
+      "married",
+      "law"
+    ]
+  }
+]
