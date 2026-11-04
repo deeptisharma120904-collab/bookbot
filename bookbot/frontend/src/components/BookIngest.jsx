@@ -1,9 +1,34 @@
 /**
  * BookBot — BookIngest component.
  * Drag & drop PDF or paste text to ingest a book, with rich animations.
+ * Progress bar polls the real /api/books/{book_id}/status endpoint for PDFs.
  */
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+
+const API_BASE = '/api';
+
+/** Poll /api/books/{book_id}/status until completed or failed. */
+async function pollIngestionStatus(bookId, onProgress, signal) {
+  const MAX_ATTEMPTS = 120; // 120 × 2s = 4 minutes max
+  let attempt = 0;
+  while (attempt < MAX_ATTEMPTS) {
+    if (signal?.aborted) return;
+    try {
+      const res = await fetch(`${API_BASE}/books/${bookId}/status`);
+      if (res.ok) {
+        const data = await res.json();
+        const pct = data.progress_percentage ?? 0;
+        onProgress(pct, data.status);
+        if (data.status === 'completed' || data.status === 'failed') return;
+      }
+    } catch (_) {
+      // Network blip — keep polling
+    }
+    await new Promise((r) => setTimeout(r, 2000));
+    attempt++;
+  }
+}
 
 export default function BookIngest({ onIngestText, onIngestPdf, loading }) {
   const [mode, setMode] = useState('text');
@@ -15,30 +40,30 @@ export default function BookIngest({ onIngestText, onIngestPdf, loading }) {
   const [dragOver, setDragOver] = useState(false);
   const [status, setStatus] = useState(null);
   const [ingestProgress, setIngestProgress] = useState(0);
+  const [progressStatus, setProgressStatus] = useState('');
+  const [isPolling, setIsPolling] = useState(false);
   const fileInputRef = useRef(null);
-  const progressRef = useRef(null);
+  const abortRef = useRef(null);
 
-  // Fake progress animation while loading
+  // For plain-text ingest (synchronous), keep the fake animation
   useEffect(() => {
+    if (mode !== 'text') return;
     if (loading) {
       setIngestProgress(0);
       let p = 0;
       const interval = setInterval(() => {
-        p += Math.random() * 12;
-        if (p >= 90) {
-          clearInterval(interval);
-          p = 90;
-        }
+        p += Math.random() * 15;
+        if (p >= 95) { clearInterval(interval); p = 95; }
         setIngestProgress(p);
-      }, 300);
+      }, 250);
       return () => clearInterval(interval);
     } else {
-      if (ingestProgress > 0) {
+      if (ingestProgress > 0 && !isPolling) {
         setIngestProgress(100);
-        setTimeout(() => setIngestProgress(0), 600);
+        setTimeout(() => setIngestProgress(0), 800);
       }
     }
-  }, [loading]);
+  }, [loading, mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const generateBookId = (t) =>
     t.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
@@ -75,6 +100,11 @@ export default function BookIngest({ onIngestText, onIngestPdf, loading }) {
       return;
     }
     setStatus(null);
+    setIngestProgress(0);
+    setProgressStatus('');
+
+    // Cancel any previous poll
+    if (abortRef.current) abortRef.current.abort();
 
     try {
       if (mode === 'pdf' && pdfFile) {
@@ -83,24 +113,62 @@ export default function BookIngest({ onIngestText, onIngestPdf, loading }) {
         formData.append('book_id', bookId);
         formData.append('title', title);
         formData.append('author', author);
+
+        // Start upload — backend responds immediately, then processes in background
+        setIngestProgress(5);
+        setProgressStatus('Uploading...');
         const result = await onIngestPdf(formData);
-        setStatus({ type: 'success', message: `✅ "${result.title}" — ${result.total_pages} pages ingested!` });
+
+        // Now poll the real status endpoint
+        setIsPolling(true);
+        setIngestProgress(10);
+        setProgressStatus('Processing pages...');
+        const ctrl = new AbortController();
+        abortRef.current = ctrl;
+
+        await pollIngestionStatus(
+          result.book_id ?? bookId,
+          (pct, st) => {
+            setIngestProgress(pct);
+            if (st === 'completed') setProgressStatus('Complete!');
+            else if (st === 'failed') setProgressStatus('Failed');
+            else setProgressStatus(`Processing... ${Math.round(pct)}%`);
+          },
+          ctrl.signal
+        );
+
+        setIsPolling(false);
+        setIngestProgress(100);
+        setProgressStatus('Complete!');
+        setStatus({
+          type: 'success',
+          message: `"${result.title}" — ${result.total_pages} pages ingested!`,
+        });
+        setTimeout(() => setIngestProgress(0), 1200);
+
       } else if (mode === 'text' && content) {
         const result = await onIngestText({ book_id: bookId, title, author, content });
-        setStatus({ type: 'success', message: `✅ "${result.title}" — ${result.total_pages} pages ingested!` });
+        setStatus({
+          type: 'success',
+          message: `"${result.title}" — ${result.total_pages} pages ingested!`,
+        });
       } else {
         setStatus({ type: 'error', message: 'Please provide book content (text or PDF).' });
         return;
       }
       setTitle(''); setAuthor(''); setBookId(''); setContent(''); setPdfFile(null);
     } catch (err) {
-      setStatus({ type: 'error', message: `❌ ${err.message}` });
+      setIsPolling(false);
+      setIngestProgress(0);
+      setStatus({ type: 'error', message: `${err.message}` });
     }
   };
 
   const inputClass =
     'w-full px-3 py-2.5 rounded-xl glass-light text-sm text-white placeholder-gray-600 ' +
     'focus:outline-none transition-all duration-300 border border-transparent focus:border-purple-500/30';
+
+  const showProgress = loading || isPolling;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3 animate-fade-in" id="ingest-form">
@@ -119,7 +187,7 @@ export default function BookIngest({ onIngestText, onIngestPdf, loading }) {
             mode === 'text' ? 'text-purple-200' : 'text-gray-500 hover:text-gray-300'
           }`}
         >
-          📝 Paste Text
+          Paste Text
         </button>
         <button
           type="button"
@@ -128,7 +196,7 @@ export default function BookIngest({ onIngestText, onIngestPdf, loading }) {
             mode === 'pdf' ? 'text-purple-200' : 'text-gray-500 hover:text-gray-300'
           }`}
         >
-          📄 Upload PDF
+          Upload PDF
         </button>
       </div>
 
@@ -136,19 +204,19 @@ export default function BookIngest({ onIngestText, onIngestPdf, loading }) {
       <div className="space-y-2">
         <input
           type="text" value={title} onChange={handleTitleChange}
-          placeholder="📚 Book Title"
+          placeholder="Book Title"
           className={inputClass}
           id="book-title-input"
         />
         <input
           type="text" value={author} onChange={(e) => setAuthor(e.target.value)}
-          placeholder="✍️ Author"
+          placeholder="Author"
           className={inputClass}
           id="book-author-input"
         />
         <input
           type="text" value={bookId} onChange={(e) => setBookId(e.target.value)}
-          placeholder="🔑 Book ID (auto-generated)"
+          placeholder="Book ID (auto-generated)"
           className={`${inputClass} text-gray-500 text-xs`}
           id="book-id-input"
         />
@@ -181,7 +249,6 @@ export default function BookIngest({ onIngestText, onIngestPdf, loading }) {
             }`}
             id="pdf-drop-zone"
           >
-            {/* Animated corner accents on drag */}
             {dragOver && (
               <>
                 <div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-purple-400 rounded-tl animate-pop-in" />
@@ -215,7 +282,7 @@ export default function BookIngest({ onIngestText, onIngestPdf, loading }) {
                   📁
                 </span>
                 <p className="text-sm text-gray-400">
-                  {dragOver ? '🎯 Drop it!' : 'Drop PDF here or click to browse'}
+                  {dragOver ? 'Drop it!' : 'Drop PDF here or click to browse'}
                 </p>
                 <p className="text-[10px] text-gray-600 mt-1">Supports .pdf files</p>
               </div>
@@ -224,11 +291,13 @@ export default function BookIngest({ onIngestText, onIngestPdf, loading }) {
         )}
       </div>
 
-      {/* Progress Bar (while loading) */}
-      {loading && ingestProgress > 0 && (
+      {/* Progress Bar — real polling for PDF, fake animation for text */}
+      {showProgress && ingestProgress > 0 && (
         <div className="space-y-1.5 animate-fade-in">
           <div className="flex justify-between items-center">
-            <span className="text-[10px] text-purple-400 font-bold animate-pulse">Processing book...</span>
+            <span className="text-[10px] text-purple-400 font-bold animate-pulse">
+              {progressStatus || 'Processing book...'}
+            </span>
             <span className="text-[10px] text-gray-600">{Math.round(ingestProgress)}%</span>
           </div>
           <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
@@ -256,24 +325,24 @@ export default function BookIngest({ onIngestText, onIngestPdf, loading }) {
       {/* Submit Button */}
       <button
         type="submit"
-        disabled={loading || !title || !author}
+        disabled={loading || isPolling || !title || !author}
         className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-sm font-bold
                    hover:from-purple-500 hover:to-indigo-500 disabled:opacity-25 disabled:cursor-not-allowed
                    transition-all duration-300 hover:shadow-xl hover:shadow-purple-500/25
                    active:scale-95 cursor-pointer btn-ripple neon-glow"
         id="ingest-submit-button"
       >
-        {loading ? (
+        {(loading || isPolling) ? (
           <span className="flex items-center justify-center gap-2">
             <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
               <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
               <path className="opacity-80" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
             </svg>
-            Ingesting Book...
+            {isPolling ? 'Indexing Pages...' : 'Uploading...'}
           </span>
         ) : (
           <span className="flex items-center justify-center gap-2">
-            🚀 Ingest Book
+            Ingest Book
           </span>
         )}
       </button>
