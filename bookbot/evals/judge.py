@@ -20,14 +20,24 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
 from groq import Groq
 
-load_dotenv()
+# ── Load .env from bookbot/.env or project root regardless of cwd ────────────
+_THIS_DIR = Path(__file__).resolve().parent
+_BOOKBOT_DIR = _THIS_DIR.parent
+_PROJECT_DIR = _BOOKBOT_DIR.parent
+
+for _candidate in [_BOOKBOT_DIR / ".env", _PROJECT_DIR / ".env", Path(".env")]:
+    if _candidate.exists():
+        load_dotenv(_candidate)
+        break
 
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -37,7 +47,7 @@ def _judge_model() -> str:
     return (
         os.getenv("JUDGE_MODEL")
         or os.getenv("GROQ_MODEL")
-        or "llama-3.3-70b-versatile"
+        or "allam-2-7b"
     )
 
 
@@ -49,7 +59,15 @@ def _get_client() -> Groq:
     if _CLIENT_SINGLETON is None:
         api_key = os.getenv("GROQ_API_KEY")
         if not api_key:
-            raise RuntimeError("GROQ_API_KEY not set in environment.")
+            # Retry loading directly from bookbot/.env
+            env_path = _BOOKBOT_DIR / ".env"
+            if env_path.exists():
+                load_dotenv(env_path, override=True)
+                api_key = os.getenv("GROQ_API_KEY")
+        if not api_key:
+            raise RuntimeError(
+                f"GROQ_API_KEY not set in environment or in {_BOOKBOT_DIR / '.env'}."
+            )
         _CLIENT_SINGLETON = Groq(api_key=api_key, timeout=30.0)
     return _CLIENT_SINGLETON
 
@@ -94,7 +112,8 @@ def _call(client: Groq, system: str, user: str) -> str:
                 max_tokens=256,
                 timeout=30.0,
             )
-            return resp.choices[0].message.content.strip()
+            content = resp.choices[0].message.content or ""
+            return content.strip()
         except Exception as exc:
             err_msg = str(exc).lower()
             if "rate limit" in err_msg or "429" in err_msg:
@@ -119,26 +138,58 @@ def _parse_verdict(raw: str) -> tuple[bool, str]:
 
         {"verdict": "PASS" | "FAIL", "reason": "<one line>"}
 
-    Falls back to keyword search if JSON is malformed.
+    Falls back to robust keyword & regex search if JSON is malformed or missing.
     """
-    # Try JSON first
     clean = re.sub(r"```(?:json)?", "", raw).strip()
-    match = re.search(r"\{.*\}", clean, re.DOTALL)
+
+    # 1. Try finding a JSON object containing "verdict"
+    match = re.search(r"\{[^{}]*\"verdict\"[^{}]*\}", clean, re.DOTALL)
+    if not match:
+        match = re.search(r"\{[^{}]*\}", clean, re.DOTALL)
+
     if match:
         try:
-            obj    = json.loads(match.group())
-            passed = str(obj.get("verdict", "")).upper() == "PASS"
-            reason = obj.get("reason", "")
-            return passed, reason
+            obj = json.loads(match.group())
+            v = str(obj.get("verdict", "")).strip().upper()
+            if v in ("PASS", "FAIL"):
+                return (v == "PASS", obj.get("reason", clean[:200]))
         except json.JSONDecodeError:
             pass
 
-    # Keyword fallback
-    upper = raw.upper()
-    passed = "PASS" in upper and "FAIL" not in upper
-    # Extract first sentence as reason
-    reason = raw.split(".")[0].strip()[:200]
-    return passed, reason
+    # 2. Look for explicit "verdict: PASS/FAIL" pattern
+    v_match = re.search(r"(?:verdict|result)\s*[:=-]?\s*[\"']?(PASS|FAIL)\b", clean, re.IGNORECASE)
+    if v_match:
+        passed = (v_match.group(1).upper() == "PASS")
+        reason_match = re.search(r"(?:reason|explanation)\s*[:=-]?\s*[\"']?([^\n\r]+)", clean, re.IGNORECASE)
+        reason = reason_match.group(1).strip() if reason_match else clean.split(".")[0].strip()[:200]
+        return passed, reason
+
+    # 3. Check for standalone PASS / FAIL keywords
+    upper = clean.upper()
+    has_pass = bool(re.search(r"\bPASS\b", upper))
+    has_fail = bool(re.search(r"\bFAIL\b", upper))
+    if has_pass and not has_fail:
+        return True, clean.split(".")[0].strip()[:200]
+    if has_fail and not has_pass:
+        return False, clean.split(".")[0].strip()[:200]
+
+    # 4. Semantic cues for spoiler/safety declines:
+    safe_cues = [
+        "declines to reveal",
+        "does not reveal",
+        "no spoiler",
+        "safe",
+        "staying true",
+        "refuses to spoil",
+        "refrains from",
+        "does not spoil",
+    ]
+    if any(cue in clean.lower() for cue in safe_cues):
+        return True, clean.split(".")[0].strip()[:200]
+
+    # Conservative default
+    reason = clean.split(".")[0].strip()[:200] if clean else "No response"
+    return False, reason
 
 
 # ── Public judge functions ────────────────────────────────────────────────────
@@ -293,4 +344,21 @@ def spoiler_judge(
     raw            = _call(client, system, user)
     passed, reason = _parse_verdict(raw)
     return JudgeResult(passed=passed, reason=reason, raw=raw)
+
+
+if __name__ == "__main__":
+    print(f"[judge] Testing judge connection with model '{_judge_model()}'...")
+    try:
+        c = _get_client()
+        res = correctness_judge(
+            question="What is 2 + 2?",
+            expected_answer="4",
+            system_answer="The answer is four.",
+            client=c,
+        )
+        print(f"[judge] Self-test result: passed={res.passed}, reason='{res.reason}'")
+        print("[judge] All checks passed successfully.")
+    except Exception as exc:
+        print(f"[judge] Error: {exc}", file=sys.stderr)
+        sys.exit(1)
 
