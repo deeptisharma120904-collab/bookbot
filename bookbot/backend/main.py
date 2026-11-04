@@ -4,6 +4,7 @@ Main entry point with all API endpoints for book ingestion, chat, and session ma
 """
 
 import asyncio
+import os
 import re
 from contextlib import asynccontextmanager
 from functools import partial
